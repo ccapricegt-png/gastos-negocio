@@ -1,0 +1,353 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Control de Gastos</title>
+<style>
+:root{--bg:#f6f5f2;--card:#fff;--ink:#1c1b19;--sub:#6b6660;--line:#e7e4de;--accent:#b5533c;--accent2:#3c6e5c;--bad:#a3402f;
+  --pad-t:env(safe-area-inset-top,0px);--pad-b:env(safe-area-inset-bottom,0px);}
+@media (prefers-color-scheme:dark){:root:not([data-theme="light"]){--bg:#17181a;--card:#212224;--ink:#f1efe9;--sub:#9b9690;--line:#33342f;}}
+:root[data-theme="dark"]{--bg:#17181a;--card:#212224;--ink:#f1efe9;--sub:#9b9690;--line:#33342f;}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--ink);font-family:-apple-system,Segoe UI,Roboto,sans-serif;
+  padding-top:var(--pad-t);padding-bottom:calc(var(--pad-b) + 70px)}
+header{position:sticky;top:0;padding:calc(14px + var(--pad-t)) 18px 12px;background:var(--bg);z-index:5;border-bottom:1px solid var(--line);display:flex;justify-content:space-between;align-items:center}
+header h1{font-size:18px;margin:0}
+header button{background:none;border:1px solid var(--line);border-radius:8px;color:var(--sub);font-size:12px;padding:6px 10px}
+main{padding:14px 16px;max-width:680px;margin:0 auto}
+.card{background:var(--card);border:1px solid var(--line);border-radius:14px;padding:14px 15px;margin-bottom:12px}
+.card h2{font-size:13px;margin:0 0 10px;color:var(--sub);text-transform:uppercase;letter-spacing:.5px}
+.row{display:flex;gap:10px;flex-wrap:wrap}
+.stat{flex:1;min-width:90px}
+.stat b{display:block;font-size:19px}
+.stat span{font-size:11px;color:var(--sub)}
+.bar-row{display:flex;align-items:center;gap:8px;margin:6px 0;font-size:13px}
+.bar-label{width:76px;flex-shrink:0;color:var(--sub)}
+.bar-track{flex:1;height:9px;background:var(--line);border-radius:5px;overflow:hidden}
+.bar-fill{height:100%;background:var(--accent);border-radius:5px}
+.bar-val{width:62px;text-align:right;flex-shrink:0}
+input,select{width:100%;padding:10px 11px;border-radius:10px;border:1px solid var(--line);background:var(--bg);color:var(--ink);font-size:15px;margin-bottom:9px}
+label{font-size:12px;color:var(--sub);display:block;margin:0 0 3px 2px}
+button.btn{border:none;border-radius:10px;padding:11px;font-size:15px;font-weight:600;cursor:pointer;width:100%}
+.btn-main{background:var(--accent);color:#fff}
+.btn-ghost{background:transparent;color:var(--accent);border:1px solid var(--accent)}
+.grid2{display:grid;grid-template-columns:1fr 1fr;gap:0 10px}
+table{width:100%;border-collapse:collapse;font-size:13px}
+th,td{text-align:left;padding:7px 4px;border-bottom:1px solid var(--line)}
+th{color:var(--sub);font-weight:500;font-size:11px;text-transform:uppercase}
+.amount-out{color:var(--bad)}
+.amount-in{color:var(--accent2)}
+.alert{background:#f3d9c8;color:#5c2c17;border-radius:10px;padding:10px 12px;font-size:13px;margin-bottom:10px}
+nav{position:fixed;bottom:0;left:0;right:0;display:flex;background:var(--card);border-top:1px solid var(--line);padding-bottom:var(--pad-b);z-index:10}
+nav button{background:none;color:var(--sub);border:none;border-radius:0;font-size:11px;font-weight:500;padding:9px 2px 8px;flex:1}
+nav button.active{color:var(--accent)}
+.hidden{display:none!important}
+.empty{color:var(--sub);font-size:13px;text-align:center;padding:12px 0}
+.small{font-size:12px;color:var(--sub)}
+.pill{display:inline-block;padding:2px 9px;border-radius:20px;background:var(--line);font-size:11px;margin-right:4px}
+</style>
+</head>
+<body>
+<header><h1>💰 Gastos</h1><button onclick="showAjustes()">⚙️ Ajustes</button></header>
+<main>
+
+<div id="pass-gate" class="card">
+  <h2>Clave del equipo</h2>
+  <p class="small">Esta clave cifra los datos antes de guardarlos en el Gist. Sin ella, nadie puede leer los gastos — ni aunque tenga el link o el Gist ID. Es la misma para los 3; pídesela a tus socios.</p>
+  <input id="pass-input" type="password" placeholder="Clave del equipo">
+  <label style="display:flex;align-items:center;gap:6px;font-size:12px;color:var(--sub)"><input type="checkbox" id="pass-remember" style="width:auto;margin:0" checked> Recordar en este teléfono</label>
+  <button class="btn btn-main" onclick="unlockApp()" style="margin-top:8px">Entrar</button>
+  <p class="small" id="pass-error" style="color:var(--bad)"></p>
+</div>
+
+<div id="app-content" class="hidden">
+<div id="status" class="small" style="margin-bottom:10px"></div>
+
+<section id="view-resumen">
+  <div id="alerts"></div>
+  <button class="btn btn-main" onclick="showView('agregar')" style="margin-bottom:12px">➕ Agregar gasto</button>
+  <div class="card"><h2>Este mes (los 3)</h2>
+    <div class="row">
+      <div class="stat"><b id="s-total">Q0</b><span>gastado</span></div>
+      <div class="stat"><b id="s-avoided" class="amount-in">Q0</b><span>ahorrado/evitado</span></div>
+      <div class="stat"><b id="s-proj">Q0</b><span>proyección próx. mes</span></div>
+    </div>
+  </div>
+  <div class="card"><h2>Por categoría</h2><div id="cat-bars"><p class="empty">Sin datos</p></div></div>
+  <div class="card"><h2>Por persona</h2><div id="person-bars"><p class="empty">Sin datos</p></div></div>
+  <div class="card"><h2>Deudas — camino a salir</h2><div id="debt-summary"><p class="empty">Agrega en Cuotas</p></div></div>
+  <div class="card"><h2>Tabla combinada</h2><div id="combined-table"><p class="empty">Sin movimientos</p></div></div>
+</section>
+
+<section id="view-agregar" class="hidden">
+  <div class="card"><h2>Nuevo gasto</h2>
+    <label>¿Quién fue?</label>
+    <select id="e-person"><option>A1</option><option>E1</option><option>L1</option></select>
+    <div class="grid2">
+      <div><label>Fecha</label><input type="date" id="e-date"></div>
+      <div><label>Hora</label><input type="time" id="e-time"></div>
+    </div>
+    <label>Categoría</label>
+    <select id="e-cat"><option>Ropa</option><option>Gasolina</option><option>Comida</option>
+      <option>Servicios/Renta</option><option>Insumos del negocio</option><option>Deuda/Cuota</option><option>Otros</option></select>
+    <div class="grid2">
+      <div><label># Factura</label><input id="e-inv" placeholder="F-00123"></div>
+      <div><label>Total (Q)</label><input type="number" step="0.01" id="e-total"></div>
+    </div>
+    <label>Nota</label><input id="e-note" placeholder="Opcional">
+    <button class="btn btn-main" onclick="addExpense()">Guardar gasto</button>
+  </div>
+  <div class="card"><h2>Gasto evitado / ahorro</h2>
+    <select id="a-person"><option>A1</option><option>E1</option><option>L1</option></select>
+    <label>Descripción</label><input id="a-desc" placeholder="Ej: no compré café">
+    <label>Monto ahorrado (Q)</label><input type="number" step="0.01" id="a-amount">
+    <button class="btn btn-ghost" onclick="addAvoided()">Registrar ahorro</button>
+  </div>
+</section>
+
+<section id="view-cuotas" class="hidden">
+  <div class="card"><h2>Nueva cuota / deuda</h2>
+    <label>Nombre</label><input id="d-name" placeholder="Ej: Préstamo moto">
+    <div class="grid2">
+      <div><label>Deuda total (Q)</label><input type="number" step="0.01" id="d-total"></div>
+      <div><label>Pago mensual (Q)</label><input type="number" step="0.01" id="d-monthly"></div>
+    </div>
+    <label>Día de pago (1-31)</label><input type="number" min="1" max="31" id="d-day">
+    <button class="btn btn-main" onclick="addDebt()">Guardar</button>
+  </div>
+  <div class="card"><h2>Activas</h2><div id="debt-list"><p class="empty">Sin cuotas</p></div></div>
+</section>
+
+<section id="view-historial" class="hidden">
+  <div class="card"><h2>Meta de ahorro</h2>
+    <div class="grid2">
+      <div><label>Meta (Q)</label><input type="number" id="g-goal"></div>
+      <div><label>Ahorrado hoy (Q)</label><input type="number" id="g-current"></div>
+    </div>
+    <button class="btn btn-ghost" onclick="saveGoal()">Actualizar</button>
+    <div id="goal-bar" style="margin-top:8px"></div>
+  </div>
+  <div class="card"><h2>Tabla — A1</h2><div id="tbl-A1"></div></div>
+  <div class="card"><h2>Tabla — E1</h2><div id="tbl-E1"></div></div>
+  <div class="card"><h2>Tabla — L1</h2><div id="tbl-L1"></div></div>
+</section>
+
+</div>
+
+<section id="view-ajustes" class="hidden">
+  <div class="card"><h2>Conexión (Gist de GitHub)</h2>
+    <p class="small">Se necesita 1 sola vez por celular. El Gist ID lo puede compartir cualquiera del equipo (no es secreto). El Token solo lo necesitas para poder AGREGAR datos — pídeselo a quien lo creó y pégalo aquí; queda guardado solo en este teléfono.</p>
+    <label>Gist ID</label><input id="cfg-gist" placeholder="ej: 3f9a1b2c...">
+    <label>Token (solo para escribir, opcional)</label><input id="cfg-token" placeholder="ghp_..." type="password">
+    <button class="btn btn-main" onclick="saveConfig()">Guardar</button>
+    <p class="small" id="cfg-status" style="margin-top:8px"></p>
+    <button class="btn btn-ghost" onclick="closeAjustes()" style="margin-top:8px">← Volver</button>
+  </div>
+</section>
+
+</main>
+<nav>
+  <button data-v="resumen" class="active" onclick="showView('resumen')">📊<br>Resumen</button>
+  <button data-v="agregar" onclick="showView('agregar')">➕<br>Agregar</button>
+  <button data-v="cuotas" onclick="showView('cuotas')">📅<br>Cuotas</button>
+  <button data-v="historial" onclick="showView('historial')">🗂️<br>Tablas</button>
+</nav>
+
+<script>
+const PEOPLE=['A1','E1','L1'];
+let data={expenses:[],avoided:[],debts:[],goal:{goalAmount:0,currentAmount:0}};
+let cfg={gist:localStorage.getItem('cfg_gist')||'',token:localStorage.getItem('cfg_token')||''};
+let passphrase=null;
+
+function showView(v){
+  ['resumen','agregar','cuotas','historial','ajustes'].forEach(id=>document.getElementById('view-'+id).classList.toggle('hidden',id!==v));
+  document.querySelectorAll('nav button').forEach(b=>b.classList.toggle('active',b.dataset.v===v));
+}
+function fmt(n){return 'Q'+(Number(n)||0).toLocaleString('es-GT',{minimumFractionDigits:2,maximumFractionDigits:2});}
+function todayStr(){return new Date().toISOString().slice(0,10);}
+function monthKey(d){return (d||'').slice(0,7);}
+
+async function loadData(){
+  const st=document.getElementById('status');
+  if(!cfg.gist){ if(st)st.textContent='⚠️ Sin conectar todavía — ve a Ajustes.'; return false; }
+  if(st) st.textContent='Cargando datos compartidos…';
+  try{
+    const r=await fetch('https://api.github.com/gists/'+cfg.gist);
+    const j=await r.json();
+    const content=j.files && j.files['gastos.json'] && j.files['gastos.json'].content;
+    let raw={};
+    if(content){
+      const parsed=JSON.parse(content);
+      if(parsed.ct){
+        if(!passphrase) return false;
+        raw = await decryptData(passphrase, parsed);
+      } else { raw = parsed; }
+    }
+    data = Object.assign({expenses:[],avoided:[],debts:[],goal:{goalAmount:0,currentAmount:0}}, raw);
+    if(st) st.textContent='✅ Sincronizado · '+new Date().toLocaleTimeString('es-GT');
+    render();
+    return true;
+  }catch(e){ if(st) st.textContent='⚠️ No se pudo cargar (revisa el Gist ID o la clave)'; return false; }
+}
+async function saveData(){
+  if(!cfg.gist||!cfg.token){ alert('Ve a Ajustes y configura el Gist ID y el Token para poder guardar.'); return false; }
+  if(!passphrase){ alert('Falta la clave del equipo — recarga la página y entra de nuevo.'); return false; }
+  document.getElementById('status').textContent='Guardando…';
+  try{
+    const enc = await encryptData(passphrase, data);
+    await fetch('https://api.github.com/gists/'+cfg.gist,{method:'PATCH',
+      headers:{'Authorization':'token '+cfg.token,'Content-Type':'application/json'},
+      body:JSON.stringify({files:{'gastos.json':{content:JSON.stringify(enc)}}})});
+    document.getElementById('status').textContent='✅ Guardado y cifrado · '+new Date().toLocaleTimeString('es-GT');
+    return true;
+  }catch(e){ document.getElementById('status').textContent='⚠️ No se pudo guardar'; return false; }
+}
+
+async function deriveKey(pass,saltB64){
+  const salt = saltB64? b64ToBuf(saltB64) : crypto.getRandomValues(new Uint8Array(16));
+  const keyMat = await crypto.subtle.importKey('raw', new TextEncoder().encode(pass), 'PBKDF2', false, ['deriveKey']);
+  const key = await crypto.subtle.deriveKey({name:'PBKDF2',salt,iterations:100000,hash:'SHA-256'}, keyMat, {name:'AES-GCM',length:256}, false, ['encrypt','decrypt']);
+  return {key, salt};
+}
+function bufToB64(buf){ return btoa(String.fromCharCode(...new Uint8Array(buf))); }
+function b64ToBuf(b64){ return Uint8Array.from(atob(b64), c=>c.charCodeAt(0)); }
+async function encryptData(pass, obj){
+  const {key,salt} = await deriveKey(pass);
+  const iv = crypto.getRandomValues(new Uint8Array(12));
+  const ct = await crypto.subtle.encrypt({name:'AES-GCM',iv}, key, new TextEncoder().encode(JSON.stringify(obj)));
+  return {salt:bufToB64(salt), iv:bufToB64(iv), ct:bufToB64(ct)};
+}
+async function decryptData(pass, enc){
+  const {key} = await deriveKey(pass, enc.salt);
+  const pt = await crypto.subtle.decrypt({name:'AES-GCM',iv:b64ToBuf(enc.iv)}, key, b64ToBuf(enc.ct));
+  return JSON.parse(new TextDecoder().decode(pt));
+}
+function showAjustes(){
+  document.getElementById('pass-gate').classList.add('hidden');
+  document.getElementById('app-content').classList.add('hidden');
+  document.getElementById('view-ajustes').classList.remove('hidden');
+}
+function closeAjustes(){
+  document.getElementById('view-ajustes').classList.add('hidden');
+  if(passphrase){ document.getElementById('app-content').classList.remove('hidden'); loadData(); }
+  else { document.getElementById('pass-gate').classList.remove('hidden'); }
+}
+function saveConfig(){
+  cfg.gist=document.getElementById('cfg-gist').value.trim();
+  cfg.token=document.getElementById('cfg-token').value.trim();
+  localStorage.setItem('cfg_gist',cfg.gist); localStorage.setItem('cfg_token',cfg.token);
+  document.getElementById('cfg-status').textContent='Guardado en este teléfono ✔️';
+  loadData();
+}
+
+async function addExpense(){
+  const item={person:document.getElementById('e-person').value,date:document.getElementById('e-date').value||todayStr(),
+    time:document.getElementById('e-time').value,category:document.getElementById('e-cat').value,
+    invoice:document.getElementById('e-inv').value,total:parseFloat(document.getElementById('e-total').value)||0,
+    note:document.getElementById('e-note').value,createdAt:Date.now()};
+  if(item.total<=0){alert('Ingresa un total válido');return;}
+  data.expenses.push(item);
+  render(); if(await saveData()){ ['e-total','e-inv','e-note'].forEach(id=>document.getElementById(id).value=''); showView('resumen'); }
+}
+async function addAvoided(){
+  const item={person:document.getElementById('a-person').value,date:todayStr(),desc:document.getElementById('a-desc').value,
+    amount:parseFloat(document.getElementById('a-amount').value)||0,createdAt:Date.now()};
+  if(item.amount<=0){alert('Ingresa un monto');return;}
+  data.avoided.push(item); render();
+  if(await saveData()){ document.getElementById('a-desc').value=''; document.getElementById('a-amount').value=''; }
+}
+async function addDebt(){
+  const item={name:document.getElementById('d-name').value,total:parseFloat(document.getElementById('d-total').value)||0,
+    monthly:parseFloat(document.getElementById('d-monthly').value)||0,day:parseInt(document.getElementById('d-day').value)||1,createdAt:Date.now()};
+  if(!item.name||item.monthly<=0){alert('Completa nombre y pago mensual');return;}
+  data.debts.push(item); render();
+  if(await saveData()){ ['d-name','d-total','d-monthly','d-day'].forEach(id=>document.getElementById(id).value=''); }
+}
+async function saveGoal(){
+  data.goal={goalAmount:parseFloat(document.getElementById('g-goal').value)||0,currentAmount:parseFloat(document.getElementById('g-current').value)||0};
+  render(); await saveData();
+}
+
+function personTable(p){
+  const rows=data.expenses.filter(e=>e.person===p).sort((a,b)=>(b.createdAt||0)-(a.createdAt||0));
+  if(rows.length===0) return '<p class="empty">Sin movimientos</p>';
+  return '<table><tr><th>Fecha</th><th>Cat.</th><th># Fact.</th><th>Total</th></tr>'+
+    rows.map(e=>`<tr><td>${e.date} ${e.time||''}</td><td>${e.category}</td><td>${e.invoice||'-'}</td><td class="amount-out">${fmt(e.total)}</td></tr>`).join('')+'</table>';
+}
+
+function render(){
+  const thisMonth=todayStr().slice(0,7);
+  const monthExp=data.expenses.filter(e=>monthKey(e.date)===thisMonth);
+  const total=monthExp.reduce((s,e)=>s+e.total,0);
+  const avoidedTotal=data.avoided.filter(a=>monthKey(a.date)===thisMonth).reduce((s,a)=>s+a.amount,0);
+  const day=new Date().getDate();
+  const proj=day>0?(total/day)*30:total;
+  document.getElementById('s-total').textContent=fmt(total);
+  document.getElementById('s-avoided').textContent=fmt(avoidedTotal);
+  document.getElementById('s-proj').textContent=fmt(proj);
+
+  const cats={}; monthExp.forEach(e=>cats[e.category]=(cats[e.category]||0)+e.total);
+  const catKeys=Object.keys(cats).sort((a,b)=>cats[b]-cats[a]);
+  document.getElementById('cat-bars').innerHTML = catKeys.length===0?'<p class="empty">Sin datos</p>':(()=>{
+    const max=Math.max(...catKeys.map(k=>cats[k]));
+    return catKeys.map(k=>`<div class="bar-row"><div class="bar-label">${k}</div><div class="bar-track"><div class="bar-fill" style="width:${(cats[k]/max*100).toFixed(0)}%"></div></div><div class="bar-val">${fmt(cats[k])}</div></div>`).join('');
+  })();
+
+  const perP={}; monthExp.forEach(e=>perP[e.person]=(perP[e.person]||0)+e.total);
+  document.getElementById('person-bars').innerHTML = Object.keys(perP).length===0?'<p class="empty">Sin datos</p>':(()=>{
+    const max=Math.max(...Object.values(perP));
+    return PEOPLE.filter(p=>perP[p]).map(p=>`<div class="bar-row"><div class="bar-label">${p}</div><div class="bar-track"><div class="bar-fill" style="width:${(perP[p]/max*100).toFixed(0)}%;background:var(--accent2)"></div></div><div class="bar-val">${fmt(perP[p])}</div></div>`).join('');
+  })();
+
+  const alertsEl=document.getElementById('alerts'); const nowDay=new Date().getDate();
+  const soon=data.debts.filter(d=>{let diff=d.day-nowDay; if(diff<0)diff+=30; return diff<=7;});
+  alertsEl.innerHTML=soon.map(d=>{let diff=d.day-nowDay; if(diff<0)diff+=30;
+    const txt=diff===0?'hoy':(diff===1?'mañana':'en '+diff+' días');
+    return `<div class="alert">⏰ Pago de <b>${d.name}</b> (${fmt(d.monthly)}) vence ${txt}</div>`;}).join('');
+
+  document.getElementById('debt-list').innerHTML = data.debts.length===0?'<p class="empty">Sin cuotas</p>':
+    data.debts.map(d=>{const monthsLeft=d.monthly>0?Math.ceil(d.total/d.monthly):0;
+      return `<div class="bar-row"><div class="bar-label">${d.name}</div><div class="small" style="flex:1">día ${d.day} · ~${monthsLeft} cuotas restantes</div><div class="amount-out">${fmt(d.monthly)}/mes</div></div>`;}).join('');
+  document.getElementById('debt-summary').innerHTML = data.debts.length===0?'<p class="empty">Agrega en Cuotas</p>':(()=>{
+    const totalDebt=data.debts.reduce((s,d)=>s+d.total,0), totalMonthly=data.debts.reduce((s,d)=>s+d.monthly,0);
+    const months=totalMonthly>0?Math.ceil(totalDebt/totalMonthly):0;
+    return `<div class="row"><div class="stat"><b class="amount-out">${fmt(totalDebt)}</b><span>deuda total</span></div><div class="stat"><b>${fmt(totalMonthly)}</b><span>pago mensual</span></div><div class="stat"><b>${months} mes(es)</b><span>para salir</span></div></div>`;
+  })();
+
+  document.getElementById('g-goal').value=data.goal.goalAmount||'';
+  document.getElementById('g-current').value=data.goal.currentAmount||'';
+  const pct=data.goal.goalAmount>0?Math.min(100,data.goal.currentAmount/data.goal.goalAmount*100):0;
+  document.getElementById('goal-bar').innerHTML=data.goal.goalAmount>0?`<div class="bar-row"><div class="bar-label">Meta</div><div class="bar-track"><div class="bar-fill" style="width:${pct.toFixed(0)}%;background:var(--accent2)"></div></div><div class="bar-val">${pct.toFixed(0)}%</div></div>`:'';
+
+  PEOPLE.forEach(p=>document.getElementById('tbl-'+p).innerHTML=personTable(p));
+
+  const all=[...data.expenses].sort((a,b)=>(b.createdAt||0)-(a.createdAt||0)).slice(0,60);
+  document.getElementById('combined-table').innerHTML = all.length===0?'<p class="empty">Sin movimientos</p>':
+    '<table><tr><th>Quién</th><th>Fecha</th><th>Cat.</th><th>Total</th></tr>'+
+    all.map(e=>`<tr><td><span class="pill">${e.person}</span></td><td>${e.date}</td><td>${e.category}</td><td class="amount-out">${fmt(e.total)}</td></tr>`).join('')+'</table>';
+}
+
+document.getElementById('e-date').value=todayStr();
+document.getElementById('e-time').value=new Date().toTimeString().slice(0,5);
+if(cfg.gist) document.getElementById('cfg-gist').value=cfg.gist;
+if(cfg.token) document.getElementById('cfg-token').value=cfg.token;
+
+const savedPass = localStorage.getItem('team_pass');
+if(savedPass){ document.getElementById('pass-input').value=savedPass; unlockApp(); }
+
+async function unlockApp(){
+  const p=document.getElementById('pass-input').value;
+  if(!p){ document.getElementById('pass-error').textContent='Escribe la clave del equipo.'; return; }
+  passphrase=p;
+  document.getElementById('pass-error').textContent='';
+  const ok = await loadData();
+  if(ok===false){ document.getElementById('pass-error').textContent='Clave incorrecta, o revisa el Gist ID en Ajustes.'; passphrase=null; return; }
+  if(document.getElementById('pass-remember').checked){ localStorage.setItem('team_pass',p); } else { localStorage.removeItem('team_pass'); }
+  document.getElementById('pass-gate').classList.add('hidden');
+  document.getElementById('app-content').classList.remove('hidden');
+  setInterval(loadData,20000);
+}
+</script>
+</body>
+</html>
