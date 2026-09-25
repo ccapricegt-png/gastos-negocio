@@ -77,13 +77,17 @@ nav button.active{color:var(--accent)}
   <div class="card"><h2>Por categoría</h2><div id="cat-bars"><p class="empty">Sin datos</p></div></div>
   <div class="card"><h2>Por persona</h2><div id="person-bars"><p class="empty">Sin datos</p></div></div>
   <div class="card"><h2>Deudas — camino a salir</h2><div id="debt-summary"><p class="empty">Agrega en Cuotas</p></div></div>
+  <div class="card"><h2>Saldo en tarjetas por persona</h2><div id="card-bars"><p class="empty">Sin datos</p></div></div>
   <div class="card"><h2>Tabla combinada</h2><div id="combined-table"><p class="empty">Sin movimientos</p></div></div>
 </section>
 
 <section id="view-agregar" class="hidden">
   <div class="card"><h2>Nuevo gasto</h2>
     <label>¿Quién fue?</label>
-    <select id="e-person"><option>A1</option><option>E1</option><option>L1</option></select>
+    <select id="e-person" onchange="updateCardOptions('e-person','e-card')"><option>A1</option><option>E1</option><option>L1</option></select>
+    <label>Método de pago</label>
+    <select id="e-pay" onchange="togglePayFields()"><option>Efectivo</option><option>Transferencia</option><option>Tarjeta</option></select>
+    <div id="e-card-wrap" class="hidden"><label>Tarjeta</label><select id="e-card"></select></div>
     <div class="grid2">
       <div><label>Fecha</label><input type="date" id="e-date"></div>
       <div><label>Hora</label><input type="time" id="e-time"></div>
@@ -119,6 +123,25 @@ nav button.active{color:var(--accent)}
   <div class="card"><h2>Activas</h2><div id="debt-list"><p class="empty">Sin cuotas</p></div></div>
 </section>
 
+<section id="view-tarjetas" class="hidden">
+  <div id="card-alerts"></div>
+  <div class="card">
+    <h2>Ver tarjetas de</h2>
+    <select id="t-person" onchange="renderTarjetas()"><option>A1</option><option>E1</option><option>L1</option></select>
+  </div>
+  <div id="card-list"></div>
+  <div class="card"><h2>Registrar pago de tarjeta</h2>
+    <label>Persona</label>
+    <select id="cp-person" onchange="updateCardOptions('cp-person','cp-card')"><option>A1</option><option>E1</option><option>L1</option></select>
+    <label>Tarjeta</label><select id="cp-card"></select>
+    <div class="grid2">
+      <div><label>Monto pagado (Q)</label><input type="number" step="0.01" id="cp-amount"></div>
+      <div><label>Fecha</label><input type="date" id="cp-date"></div>
+    </div>
+    <button class="btn btn-ghost" onclick="addCardPayment()">Registrar pago</button>
+  </div>
+</section>
+
 <section id="view-historial" class="hidden">
   <div class="card"><h2>Meta de ahorro</h2>
     <div class="grid2">
@@ -151,22 +174,40 @@ nav button.active{color:var(--accent)}
   <button data-v="resumen" class="active" onclick="showView('resumen')">📊<br>Resumen</button>
   <button data-v="agregar" onclick="showView('agregar')">➕<br>Agregar</button>
   <button data-v="cuotas" onclick="showView('cuotas')">📅<br>Cuotas</button>
+  <button data-v="tarjetas" onclick="showView('tarjetas')">💳<br>Tarjetas</button>
   <button data-v="historial" onclick="showView('historial')">🗂️<br>Tablas</button>
 </nav>
 
 <script>
 const PEOPLE=['A1','E1','L1'];
-let data={expenses:[],avoided:[],debts:[],goal:{goalAmount:0,currentAmount:0}};
+const CARDS={
+  A1:['Promerica','BI débito','BI crédito','Banrural débito','Banrural crédito','Ziggi'],
+  E1:['BI débito','BI crédito Visa','BI crédito Mastercard','BAC débito','BAC crédito','Ziggi','G&T'],
+  L1:['BI débito','BI crédito','Promerica','Banrural débito','Banrural crédito','BAC débito','BAC crédito','Ziggi']
+};
+let data={expenses:[],avoided:[],debts:[],cardDates:{},cardPayments:[],goal:{goalAmount:0,currentAmount:0}};
 let cfg={gist:localStorage.getItem('cfg_gist')||'',token:localStorage.getItem('cfg_token')||''};
 let passphrase=null;
 
 function showView(v){
-  ['resumen','agregar','cuotas','historial','ajustes'].forEach(id=>document.getElementById('view-'+id).classList.toggle('hidden',id!==v));
+  ['resumen','agregar','cuotas','tarjetas','historial','ajustes'].forEach(id=>document.getElementById('view-'+id).classList.toggle('hidden',id!==v));
   document.querySelectorAll('nav button').forEach(b=>b.classList.toggle('active',b.dataset.v===v));
 }
 function fmt(n){return 'Q'+(Number(n)||0).toLocaleString('es-GT',{minimumFractionDigits:2,maximumFractionDigits:2});}
 function todayStr(){return new Date().toISOString().slice(0,10);}
 function monthKey(d){return (d||'').slice(0,7);}
+function cardKey(person,card){ return person+'||'+card; }
+
+function updateCardOptions(personSelId, cardSelId){
+  const person = document.getElementById(personSelId).value;
+  const sel = document.getElementById(cardSelId);
+  sel.innerHTML = (CARDS[person]||[]).map(c=>`<option>${c}</option>`).join('');
+}
+function togglePayFields(){
+  const pay = document.getElementById('e-pay').value;
+  document.getElementById('e-card-wrap').classList.toggle('hidden', pay!=='Tarjeta');
+  if(pay==='Tarjeta') updateCardOptions('e-person','e-card');
+}
 
 async function loadData(){
   const st=document.getElementById('status');
@@ -184,7 +225,7 @@ async function loadData(){
         raw = await decryptData(passphrase, parsed);
       } else { raw = parsed; }
     }
-    data = Object.assign({expenses:[],avoided:[],debts:[],goal:{goalAmount:0,currentAmount:0}}, raw);
+    data = Object.assign({expenses:[],avoided:[],debts:[],cardDates:{},cardPayments:[],goal:{goalAmount:0,currentAmount:0}}, raw);
     if(st) st.textContent='✅ Sincronizado · '+new Date().toLocaleTimeString('es-GT');
     render();
     return true;
@@ -242,13 +283,61 @@ function saveConfig(){
 }
 
 async function addExpense(){
+  const pay=document.getElementById('e-pay').value;
   const item={person:document.getElementById('e-person').value,date:document.getElementById('e-date').value||todayStr(),
     time:document.getElementById('e-time').value,category:document.getElementById('e-cat').value,
     invoice:document.getElementById('e-inv').value,total:parseFloat(document.getElementById('e-total').value)||0,
-    note:document.getElementById('e-note').value,createdAt:Date.now()};
+    note:document.getElementById('e-note').value,method:pay,card: pay==='Tarjeta'?document.getElementById('e-card').value:null,
+    createdAt:Date.now()};
   if(item.total<=0){alert('Ingresa un total válido');return;}
   data.expenses.push(item);
   render(); if(await saveData()){ ['e-total','e-inv','e-note'].forEach(id=>document.getElementById(id).value=''); showView('resumen'); }
+}
+async function addCardPayment(){
+  const item={person:document.getElementById('cp-person').value,card:document.getElementById('cp-card').value,
+    amount:parseFloat(document.getElementById('cp-amount').value)||0,date:document.getElementById('cp-date').value||todayStr(),createdAt:Date.now()};
+  if(item.amount<=0){alert('Ingresa un monto válido');return;}
+  data.cardPayments.push(item); render();
+  if(await saveData()){ document.getElementById('cp-amount').value=''; }
+}
+function getCardBalance(person,card){
+  const spent = data.expenses.filter(e=>e.person===person && e.method==='Tarjeta' && e.card===card).reduce((s,e)=>s+e.total,0);
+  const paid = data.cardPayments.filter(p=>p.person===person && p.card===card).reduce((s,p)=>s+p.amount,0);
+  return Math.max(0, spent-paid);
+}
+function saveCardDates(person,card){
+  const cut=parseInt(document.getElementById('cd-'+person+'-'+card+'-cut').value)||null;
+  const due=parseInt(document.getElementById('cd-'+person+'-'+card+'-due').value)||null;
+  data.cardDates[cardKey(person,card)]={cut,due};
+  saveData();
+}
+function renderTarjetas(){
+  const person=document.getElementById('t-person').value;
+  const cards=CARDS[person]||[];
+  const nowDay=new Date().getDate();
+  const alerts=[];
+  document.getElementById('card-list').innerHTML = cards.map(c=>{
+    const key=cardKey(person,c);
+    const dates=data.cardDates[key]||{};
+    const balance=getCardBalance(person,c);
+    if(dates.due){ let diff=dates.due-nowDay; if(diff<0)diff+=30;
+      if(diff<=7) alerts.push(`⏰ Tarjeta <b>${c}</b> (${person}) vence en ${diff===0?'hoy':(diff===1?'mañana':diff+' días')} · saldo ${fmt(balance)}`);
+    }
+    const purchases=data.expenses.filter(e=>e.person===person && e.method==='Tarjeta' && e.card===c).sort((a,b)=>(b.createdAt||0)-(a.createdAt||0));
+    const rows = purchases.length===0?'<p class="empty">Sin compras</p>':
+      '<table><tr><th>Fecha</th><th>Cat.</th><th># Fact.</th><th>Nota</th><th>Total</th></tr>'+
+      purchases.map(e=>`<tr><td>${e.date}</td><td>${e.category}</td><td>${e.invoice||'-'}</td><td>${e.note||'-'}</td><td class="amount-out">${fmt(e.total)}</td></tr>`).join('')+'</table>';
+    return `<div class="card">
+      <h2>${c}</h2>
+      <div class="row"><div class="stat"><b class="amount-out">${fmt(balance)}</b><span>saldo acumulado</span></div></div>
+      <div class="grid2">
+        <div><label>Día de corte</label><input type="number" min="1" max="31" id="cd-${person}-${c}-cut" value="${dates.cut||''}" onchange="saveCardDates('${person}','${c}')"></div>
+        <div><label>Día de pago</label><input type="number" min="1" max="31" id="cd-${person}-${c}-due" value="${dates.due||''}" onchange="saveCardDates('${person}','${c}')"></div>
+      </div>
+      ${rows}
+    </div>`;
+  }).join('');
+  document.getElementById('card-alerts').innerHTML = alerts.map(a=>`<div class="alert">${a}</div>`).join('');
 }
 async function addAvoided(){
   const item={person:document.getElementById('a-person').value,date:todayStr(),desc:document.getElementById('a-desc').value,
@@ -272,8 +361,8 @@ async function saveGoal(){
 function personTable(p){
   const rows=data.expenses.filter(e=>e.person===p).sort((a,b)=>(b.createdAt||0)-(a.createdAt||0));
   if(rows.length===0) return '<p class="empty">Sin movimientos</p>';
-  return '<table><tr><th>Fecha</th><th>Cat.</th><th># Fact.</th><th>Total</th></tr>'+
-    rows.map(e=>`<tr><td>${e.date} ${e.time||''}</td><td>${e.category}</td><td>${e.invoice||'-'}</td><td class="amount-out">${fmt(e.total)}</td></tr>`).join('')+'</table>';
+  return '<table><tr><th>Fecha</th><th>Cat.</th><th>Pago</th><th># Fact.</th><th>Total</th></tr>'+
+    rows.map(e=>`<tr><td>${e.date} ${e.time||''}</td><td>${e.category}</td><td>${e.method==='Tarjeta'?e.card:(e.method||'-')}</td><td>${e.invoice||'-'}</td><td class="amount-out">${fmt(e.total)}</td></tr>`).join('')+'</table>';
 }
 
 function render(){
@@ -324,11 +413,23 @@ function render(){
 
   const all=[...data.expenses].sort((a,b)=>(b.createdAt||0)-(a.createdAt||0)).slice(0,60);
   document.getElementById('combined-table').innerHTML = all.length===0?'<p class="empty">Sin movimientos</p>':
-    '<table><tr><th>Quién</th><th>Fecha</th><th>Cat.</th><th>Total</th></tr>'+
-    all.map(e=>`<tr><td><span class="pill">${e.person}</span></td><td>${e.date}</td><td>${e.category}</td><td class="amount-out">${fmt(e.total)}</td></tr>`).join('')+'</table>';
+    '<table><tr><th>Quién</th><th>Fecha</th><th>Cat.</th><th>Pago</th><th>Total</th></tr>'+
+    all.map(e=>`<tr><td><span class="pill">${e.person}</span></td><td>${e.date}</td><td>${e.category}</td><td>${e.method==='Tarjeta'?e.card:(e.method||'-')}</td><td class="amount-out">${fmt(e.total)}</td></tr>`).join('')+'</table>';
+
+  const cardTotals={};
+  PEOPLE.forEach(p=>{ cardTotals[p]=(CARDS[p]||[]).reduce((s,c)=>s+getCardBalance(p,c),0); });
+  const ctKeys=PEOPLE.filter(p=>cardTotals[p]>0);
+  document.getElementById('card-bars').innerHTML = ctKeys.length===0?'<p class="empty">Sin datos</p>':(()=>{
+    const max=Math.max(...ctKeys.map(p=>cardTotals[p]));
+    return ctKeys.map(p=>`<div class="bar-row"><div class="bar-label">${p}</div><div class="bar-track"><div class="bar-fill" style="width:${(cardTotals[p]/max*100).toFixed(0)}%;background:var(--bad)"></div></div><div class="bar-val">${fmt(cardTotals[p])}</div></div>`).join('');
+  })();
+
+  if(document.getElementById('t-person')) renderTarjetas();
 }
 
 document.getElementById('e-date').value=todayStr();
+updateCardOptions('cp-person','cp-card');
+document.getElementById('cp-date').value=todayStr();
 document.getElementById('e-time').value=new Date().toTimeString().slice(0,5);
 if(cfg.gist) document.getElementById('cfg-gist').value=cfg.gist;
 if(cfg.token) document.getElementById('cfg-token').value=cfg.token;
